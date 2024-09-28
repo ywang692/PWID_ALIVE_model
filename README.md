@@ -4,7 +4,7 @@ This repository holds the source code to reproduce the simulations in our resear
 
 The model was written and executed in the R statistical software language and largely utilized the [EpiModel](http://epimodel.org/) package. 
 
-Code to extracted model parameters from synthetic datasets is in `01.param.R`\
+Code to compile all parameters and generate initial conditions for simulations is in `01.param.R`\
 Network simulations with ERGM are done in `02.net.R`\
 Customized modules of the tranmission model are in `03.API_extension.R`. These codes are for the application programming interface (API) of the EpiModel package. 
 

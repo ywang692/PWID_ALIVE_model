@@ -1,7 +1,7 @@
 library(EpiModel)
 
 nw <- network::network.initialize(n=pop,directed=FALSE)
-nw <- network::set.vertex.attribute(nw, "age.group", as.vector(age.group))
+nw <- network::set.vertex.attribute(nw, "age.group", as.vector(t0$age_group))
 
 formation <- ~edges + nodematch("age.group") + concurrent
 target.stats <- c(params$edges, params$nodematch, params$concurrent)

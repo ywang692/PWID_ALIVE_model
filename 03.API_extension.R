@@ -4,27 +4,22 @@ setup <- function(dat,at) {
   #Set up initial attributes for each individual
   if (at == 2){
     dat <- set_attr(dat, "active", rep(1,pop))
-    dat <- set_attr(dat, "age", age)
-    dat <- set_attr(dat, "gender", gender)
-    dat <- set_attr(dat, "status", status_vec) #s or i
-    dat <- set_attr(dat, "hiv_status", hiv_vec)
-    dat <- set_attr(dat, "hcv_status", hcv_vec)
-    dat <- set_attr(dat, "coinfection", as.numeric(hiv_vec + hcv_vec == 2))
-    dat <- set_attr(dat, "infTime_hiv", hiv_vec) #Set infection to 1 for those who were infected at the beginning of simulations
-    dat <- set_attr(dat, "infTime_hcv", hcv_vec)
-    dat <- set_attr(dat, "current_inj", rep(1,pop)) ## whether actively inject at current time step
-    dat <- set_epi(dat, "n_current_inj", at, sum(dat$attr$current_inj, na.rm=T)) #summarizes number of active injectors at each time step
-    dat <- set_attr(dat, "inj_freq", inj30d)
-    dat <- set_attr(dat, "sex_freq", sex30d)
+    dat <- set_attr(dat, "age", t0$age)
+    dat <- set_attr(dat, "gender", t0$gender)
+    dat <- set_attr(dat, "status", t0$status_vec) #s or i
+    dat <- set_attr(dat, "hiv_status", t0$hiv_vec)
+    dat <- set_attr(dat, "hcv_status", t0$hcv_vec)
+    dat <- set_attr(dat, "coinfection", as.numeric(t0$hiv_vec + t0$hcv_vec == 2))
+    dat <- set_attr(dat, "infTime_hiv", t0$hiv_vec) #Set infection to 1 for those who were infected at the beginning of simulations
+    dat <- set_attr(dat, "infTime_hcv", t0$hcv_vec)
+    dat <- set_attr(dat, "inj_freq", t0$inj30d)
     ## 1 = early cessation; 2 = delayed cessation; 3 = relapse; 4 = persistent 
-    dat <- set_attr(dat, "cess_group", cess_group) ## risk trajectory each individual is initially in
-    dat <- set_attr(dat, "cess_begin", pmin(cess_begin, time_steps)) #time when one's risk trajectory begins
+    dat <- set_attr(dat, "cess_group", t0$cess_group) ## risk trajectory each individual is initially in
+    dat <- set_attr(dat, "cess_begin", pmin(t0$cess_begin, time_steps)) #time when one's risk trajectory begins
     dat <- set_attr(dat, "cess_at", rep(0,pop)) #progress of one's trajectory (x axis of probability curve)
-    #dat <- set_attr(dat, "moud", moud)
-    #dat <- set_attr(dat, "ssp", ssp)
-    dat <- set_attr(dat, "hcv_spont_clear_prob", hcv_spont_clear_prob) 
-    dat <- set_attr(dat, "hcv_acute_length", hcv_acute_length) ## length of HCV acute infection for each individual
-    dat <- set_attr(dat, "hcv_ever_treated", hcv_ever_treated) ## whether an individual was ever treated for HCV
+    dat <- set_attr(dat, "hcv_spont_clear_prob", t0$hcv_spont_clear_prob) 
+    dat <- set_attr(dat, "hcv_acute_length", t0$hcv_acute_length) ## length of HCV acute infection for each individual
+    dat <- set_attr(dat, "hcv_ever_treated", t0$hcv_ever_treated) ## whether an individual was ever treated for HCV
     dat <- set_attr(dat, "behav_change", rep(1,pop)) ##whether an individual would be affected by pandemic-induced behavior change
   }
   
@@ -47,7 +42,7 @@ setup <- function(dat,at) {
 test <- function(dat, at) {
   
   active <- get_attr(dat, "active")
-  current_inj <- get_attr(dat, "current_inj")
+  #current_inj <- get_attr(dat, "current_inj")
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
   
   ## HIV testing
@@ -83,7 +78,7 @@ test <- function(dat, at) {
 treatment <- function(dat, at) {
   
   active <- get_attr(dat, "active")
-  current_inj <- get_attr(dat, "current_inj")
+  #current_inj <- get_attr(dat, "current_inj")
   test.status <- get_attr(dat, "diag.status")
   hiv.status <- get_attr(dat,"hiv_status")
   hcv.status <- get_attr(dat,"hcv_status")
@@ -160,28 +155,44 @@ treatment <- function(dat, at) {
 infect <- function(dat, at) {
   
   active <- get_attr(dat, "active")
-  current_inj <- get_attr(dat, "current_inj")
   status <- get_attr(dat, "status")
   alive <- is.na(get_attr(dat,"exitTime")) %>% as.numeric()
   
   #Eligible individuals for transmission are active injectors who are infected by HCV and/or HIV
-  idsInf <- which(alive == 1 & current_inj == 1 & status == "i")
+  idsInf <- which(alive == 1 & active == 1 & status == "i")
   nElig <- length(idsInf)
   
   if (nElig > 0) {
     
-    nw <- as.data.frame(as.edgelist(dat$nw[[1]])) #Extract current injector network 
+    nw <- data.frame(V1 = unlist(lapply(dat$nw[[1]]$mel, function(x) x$inl)),
+                    V2 = unlist(lapply(dat$nw[[1]]$mel, function(x) x$outl))) #convert overall network to an edgelist 
+    #compile the start&end point to active period of all edges
+    nw$nrow <- unlist(lapply(dat$nw[[1]]$mel, function(x) nrow(x$atl$active)))
+    nw$start <- nw$end <- NA
+    for (r in which(nw$nrow > 0)){
+      nrow <- nw$nrow[r]
+      nw$start[r] <- dat$nw[[1]]$mel[[r]]$atl$active[nrow, 1]
+      nw$end[r] <- dat$nw[[1]]$mel[[r]]$atl$active[nrow, 2]
+    }
+    
+    nw <- nw[which(at >= nw$start & at < nw$end), ] #only keep edges that are active at the current step
   
+    degree <- nrow(nw)*2/sum(active) #record mean degree of active drug use network 
+    if (at == 2){
+      dat$epi$mean_degree <- c(0,degree)
+    } else {
+      dat$epi$mean_degree[at] <- degree
+    }
+    
     # get info of the infected individuals
     gender <- get_attr(dat, "gender")[idsInf]
-    #inj_freq <- pmax(rpois(nElig, inj_freq), 1)
     behav <- get_attr(dat, "behav_change")[idsInf]
-    ssp <- get_attr(dat, "ssp")[idsInf] * rbeta(nElig, params$ssp_effect_dist[1], params$ssp_effect_dist[2]) * dat$param$ssp_on[at]
-    moud <- get_attr(dat, "moud")[idsInf] * rbeta(nElig, params$moud_effect_dist[1], params$moud_effect_dist[2]) * dat$param$moud_on[at]
-    #inj_freq <- inj_freq * (1-moud) * ifelse(dat$param$behav_change[at] == 1 & behav == 1, 1.44, 1)
+    ssp_1 <- sapply(dat$attr$cess_group[idsInf], function(x) rbinom(1,size = 1, prob = params$ssp_prob[x]))
+    moud_1 <- sapply(dat$attr$cess_group[idsInf], function(x) rbinom(1,size = 1, prob = params$moud_prob[x]))
+    ssp <- ssp_1 * rbeta(nElig, params$ssp_effect_dist[1], params$ssp_effect_dist[2]) * dat$param$ssp_on[at]
+    moud <- moud_1 * rbeta(nElig, params$moud_effect_dist[1], params$moud_effect_dist[2]) * dat$param$moud_on[at]
     inj_freq <- get_attr(dat,"inj_freq")[idsInf]
     inj_freq <- inj_freq * (1-moud)
-    sex_freq <- get_attr(dat,"sex_freq")[idsInf]
     if (dat$param$behav_change[at] == 1){
       if (dat$param$lost_to_followup == "LOW"){
         inj_freq <- inj_freq * ifelse(behav == 1, 1.44, 1)
@@ -219,7 +230,7 @@ infect <- function(dat, at) {
     }
     prob_hiv_per_share <- pmax(params$hiv_blood * acute_hiv_increase * (1 - viral_supp_scale), 0)
     prob_hiv_per_share[which(hiv_status == 0)] <- 0 #HIV- individuals have 0 transmission probability 
-    prob_hiv_per_sex <- pmax(hiv_sexual * acute_hiv_increase *(1 - viral_supp_scale), 0)
+    prob_hiv_per_sex <- pmax(params$hiv_sexual * acute_hiv_increase *(1 - viral_supp_scale), 0)
     prob_hiv_per_sex[which(hiv_status == 0)] <- 0
     
     if (at == 2){
@@ -232,7 +243,7 @@ infect <- function(dat, at) {
     post_treatment_reduc[get_attr(dat,"hcv_ever_treated")[idsInf] != 1] <- 0 #reduced HCV transmission prob if ever treated
     prob_hcv_per_share <- pmax(params$hcv_blood * acute_hcv_increase * (1-post_treatment_reduc), 0)
     prob_hcv_per_share[which(hcv_status == 0)] <- 0 #HCV- individuals have 0 transmission probability
-    prob_hcv_per_sex <- pmax(hcv_sexual * acute_hcv_increase * (1-post_treatment_reduc), 0)
+    prob_hcv_per_sex <- pmax(params$hcv_sexual * acute_hcv_increase * (1-post_treatment_reduc), 0)
     prob_hcv_per_sex[which(hcv_status == 0)] <- 0
   
     ## Start looping transmission simulation for each infected individual 
@@ -336,7 +347,6 @@ infect <- function(dat, at) {
 hcv.spont.clear <- function(dat, at){
   
   active <- get_attr(dat, "active")
-  current_inj <- get_attr(dat, "current_inj")
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
   hcv_status <- get_attr(dat, "hcv_status")
   hiv_status <- get_attr(dat, "hiv_status")
@@ -372,12 +382,14 @@ hcv.spont.clear <- function(dat, at){
 aging <- function(dat,at){
   
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
-  dat$attr$age[as.logical(alive)] <- dat$attr$age[as.logical(alive)] + 1/12 ##aging of all alive individuals 
+  dat$attr$age[as.logical(alive)] <- dat$attr$age[as.logical(alive)] + 1/12 #all alive individuals age
   
+  #record mean age of active drug users at the current step 
+  active <- get_attr(dat, "active")
   if (at == 2){
-    dat$epi$meanAge <- c(NA_real_, mean(dat$attr$age, na.rm=T))
+    dat$epi$meanAge <- c(NA_real_, mean(dat$attr$age[active == 1], na.rm=T))
   } else {
-    dat$epi$meanAge[at] <- mean(dat$attr$age[as.logical(alive)], na.rm=T)
+    dat$epi$meanAge[at] <- mean(dat$attr$age[active == 1], na.rm=T)
   }
   return(dat)
 }
@@ -395,22 +407,23 @@ dfunc <- function(dat,at){
     hcv <- as.logical(dat$attr$hcv_status[idsElig] == 1)
     no_supp <- which(dat$attr$viral.supp == 0)
     if (dat$param$moud_on[at] == 1){
-      death.rates <- sapply(ages, function(x) mortality_rates[x]/1000/12)
+      death.rates <- sapply(ages, function(x) params$mortality[x]/1000/12)
     } else { #apply different death rates for pre-/inter-pandemic 
-      death.rates <- sapply(ages, function(x) mortality_rates_covid[x]/1000/12)
+      death.rates <- sapply(ages, function(x) params$mortality_covid[x]/1000/12)
     }
     death.rates <- death.rates / (params$hiv_prev * params$mort_hiv + (1 - params$hiv_prev)) #first set everyone to have HIV- mortality
     death.rates[hiv] <- death.rates[hiv] * params$mort_hiv #then multiply mortality of HIV+ indiv
     death.rates <- death.rates / (params$hcv_prev * params$mort_hcv + (1 - params$hcv_prev)) #first set everyone to have HCV- mortality
     death.rates[hcv] <- death.rates[hcv] * params$mort_hcv #then multiply mortality of HCV+ indiv
-   
+    
     #Draw ids who passed at current time step
     vecDeaths <- which(rbinom(nElig, 1, death.rates) == 1)
-    idsDeaths <- idsElig[vecDeaths]
+    idsDeaths <- idsElig[unique(c(vecDeaths, which(ages > 90)))] #individuals older than 90 exit automatically
     nDeaths <- length(idsDeaths)
     if (nDeaths > 0){
       dat$attr$active[idsDeaths] <- 0
       dat$attr$exitTime[idsDeaths] <- at #set exit time 
+      deactivate.vertices(dat$nw[[1]], v = idsDeaths, onset = at, terminus = Inf, deactivate.edges = TRUE) #permanently deactivate dead nodes and associated edges
     }
   }
   if (at == 2) {
@@ -427,6 +440,7 @@ cess <- function(dat,at){
   active <- which(dat$attr$active ==1)
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
   change_indiv <- which(alive==1 & dat$attr$behav_change == 1)
+  lost_indiv <- which(alive == 1 & dat$attr$behav_change == 0)
   
   ## At the beginning of pandemic, some individuals would change their risk trajectories 
   if (dat$param$behav_change[at]-dat$param$behav_change[at-1] == 1){
@@ -446,31 +460,20 @@ cess <- function(dat,at){
   
   vecCess <- c()
   if (nElig > 0){
-    dat$attr$current_inj[idsElig] <- rep(1, nElig) #reset all eligible indiv as active injectors at each time step 
+    #reset all eligible indiv as active injectors at each time step 
     dat$attr$active[idsElig] <- rep(1, nElig)
-    
-    #activate and reset all network nodes and edges 
-    dat$nw[[1]] <- activate.vertices(dat$nw[[1]], onset = at, terminus = Inf, v = seq_along(dat$nw[[1]]$val))
-    dat$nw[[1]] <- activate.edges(dat$nw[[1]], onset = NULL, terminus = NULL, length = NULL, at = NULL, e = seq_along(dat$nw[[1]]$mel))
-    dead <- which(!is.na(dat$attr$exitTime)) #deactivate all the dead nodes & their edges 
-    dat$attr$active[dead] <- rep(0, length(dead))
-    dat$nw[[1]] <- deactivate.vertices(dat$nw[[1]], onset = NULL, terminus = NULL, length = NULL, at = NULL, v = dead, deactivate.edges = TRUE)
     
     inj_prob <- rep(NA,nElig)
     dat$attr$cess_at[idsElig] <- dat$attr$cess_at[idsElig] + 1 #add 1 time step on the progress of one's risk trajectory 
-    # for (ii in 1:nElig){
-    #   # find one's prob of active injection at the current step by their trajectory membership and trajectory time progress
-    #   inj_prob[ii] <- cess_prob_values[dat$attr$cess_at[idsElig[ii]] , dat$attr$cess_group[idsElig[ii]]] 
-    # }
+    
     inj_prob <- sapply(idsElig, function(x) params$cess_prob_values[dat$attr$cess_at[x] , dat$attr$cess_group[x]])
     vecCess <- which(rbinom(nElig, 1, prob=inj_prob) == 0) #draw individuals who are in cessation at current time step 
     
     if (length(vecCess) > 0){
       idsCess <- idsElig[vecCess]
-      dat$attr$current_inj[idsCess] <- 0
       dat$attr$active[idsCess] <- 0
-      #deactivate nodes in cessation 
-      dat$nw[[1]] <- deactivate.vertices(dat$nw[[1]], onset = at, terminus = Inf, v=idsCess, deactivate.edges=TRUE)
+      #deactivate nodes in cessation (for one time step)
+      dat$nw[[1]] <- deactivate.vertices(dat$nw[[1]], onset = at, terminus = at+1, v=idsCess, deactivate.edges=TRUE)
     }
   }
   ## Update summary stats (total individuals in cessation at current time step)
@@ -485,25 +488,11 @@ cess <- function(dat,at){
 
 bfunc <- function(dat, at){
   
-  n <- network.size(dat$nw[[1]])
-  pid <- sort(as.numeric(get.vertex.pid(dat$nw[[1]])))
-  ## find mean node degree of active injectors
-  adj <- as.matrix(dat$nw[[1]])
-  degree_all <- mean(colSums(adj), na.rm=T) 
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
   active <- get_attr(dat, "active")
-  active_pop <- which(active==1 & dat$attr$current_inj==1)
-  adj <- adj[active_pop, active_pop]
-  degree <- mean(colSums(adj), na.rm=T) 
-  if (at == 2){
-    dat$epi$mean_degree <- c(0,degree)
-    dat$epi$degree_all <- c(0,degree_all)
-  } else {
-    dat$epi$mean_degree[at] <- degree
-    dat$epi$degree_all[at] <- degree_all
-  }
+  active_pop <- sum(active==1 & alive==1)
   
-  numNeeded <- pop - sum(alive == 1 & dat$attr$current_inj == 1, na.rm=T) #add new injectors to keep population constant 
+  numNeeded <- pop - active_pop #add new injectors to keep population constant 
   
   if (numNeeded > 0){
     nBirths <- rpois(1, numNeeded)
@@ -512,9 +501,10 @@ bfunc <- function(dat, at){
   }
   if (nBirths > 0){
     #assign new ids to new individuals 
-    last_pid <- tail(pid,1)
+    last_pid <- dat$`_last_unique_id`
     new_pid <- seq(1,nBirths) + last_pid
     dat$nw[[1]] <- add.vertices.networkDynamic(dat$nw[[1]], nv=nBirths, vertex.pid = as.character(new_pid))
+    dat[["_last_unique_id"]] <- tail(new_pid, 1)
     newNodes <- (n+1) : (n+nBirths)
     dat$nw[[1]] <- activate.vertices(dat$nw[[1]], onset = at, terminus = Inf, v = newNodes) #activate new nodes
     dat$attr$unique_id <- c(dat$attr$unique_id, new_pid)
@@ -531,13 +521,12 @@ bfunc <- function(dat, at){
       status[which(hiv_status == 1 | hcv_status == 1)] <- "i"
     dat$attr$status <- c(dat$attr$status, status)
     dat$attr$infTime <- c(dat$attr$infTime, rep(NA, nBirths))
-    dat$attr$current_inj <- c(dat$attr$current_inj, rep(1, nBirths))
-      unborn_age <- rgamma(nBirths, shape = age_1stinj_dist[1], rate = age_1stinj_dist[2]) %>%
-        round() %>%
+      unborn_age <- rgamma(nBirths, shape = params$age_1st_inj_dist[1], rate = params$age_1st_inj_dist[2]) %>%
+        pmin(.,80) %>%
         pmax(.,18)
     dat$attr$age <- c(dat$attr$age, unborn_age)
     dat$attr$gender <- c(dat$attr$gender, rbinom(nBirths, 1, params$m0f1))
-      new_freq <- rexp(nBirths, rate = inj30d_dist) %>% 
+      new_freq <- rexp(nBirths, rate = params$inj30d_dist) %>% 
         round() %>% 
         pmax(.,1) %>% 
         pmin(.,200)
@@ -548,15 +537,13 @@ bfunc <- function(dat, at){
       cess_begin <- pmin(cess_begin, time_steps)
     dat$attr$cess_at <- c(dat$attr$cess_at, rep(0, nBirths))
     dat$attr$cess_begin <- c(dat$attr$cess_begin, cess_begin)
-    dat$attr$moud <- sapply(dat$attr$cess_group, function(x) rbinom(1,size = 1, prob = params$moud_prob[x]))
-    dat$attr$ssp <- sapply(dat$attr$cess_group, function(x) rbinom(1,size = 1, prob = params$ssp_prob[x]))
     dat$attr$diag.status <- c(dat$attr$diag.status, rep(0, nBirths))
     dat$attr$art.status <- c(dat$attr$art.status, rep(0, nBirths))
     dat$attr$viral.supp <- c(dat$attr$viral.supp, rep(NA, nBirths))
     new.age.group <- cut(dat$attr$age, 
-                         breaks = c(18, 24, 34, 44, 75), 
+                         breaks = c(18, 24, 34, 44, 100), 
                          labels = c(1:4), 
-                         right = TRUE, include.lowest = TRUE)
+                         right = TRUE, include.lowest = TRUE) %>% as.vector()
     dat$nw[[1]] <- network::set.vertex.attribute(dat$nw[[1]], "age.group", new.age.group)
     dat$attr$hcv_spont_clear_prob <- c(dat$attr$hcv_spont_clear_prob, rbeta(nBirths, params$hcv_spont_clear_dist[1], params$hcv_spont_clear_dist[2]))
     dat$attr$hcv_acute_length <- c(dat$attr$hcv_acute_length, runif(nBirths, params$hcv_acute_length_dist[1], params$hcv_acute_length_dist[2]))
@@ -581,35 +568,7 @@ bfunc <- function(dat, at){
   }
   
   alive <- is.na(get_attr(dat,"exitTime")) %>% as.numeric()
-  nCurrent <- length(which(alive == 1 & dat$attr$current_inj == 1))
-  dat$epi$n_current_inj[at] <- nCurrent
   
-  return(dat)
-}
-
-
-nwup <- function(dat, at){
-  
-  status <- get_attr(dat, "status")
-  active <- get_attr(dat, "active")
-  entrTime <- get_attr(dat, "entrTime")
-  exitTime <- get_attr(dat, "exitTime")
-  tergmLite <- get_control(dat, "tergmLite")
-  resimulate.network <- get_control(dat, "resimulate.network")
-  arrivals <- which(active == 1 & entrTime == at)
-  departures <- which(active == 0 & exitTime == at)
-  nArrivals <- length(arrivals)
-  
-  if (tergmLite == FALSE && resimulate.network == TRUE) {
-    dat <- copy_datattr_to_nwattr(dat)
-  }
-  if (tergmLite == FALSE) {
-    for (network in 1:1) {
-      dat$nw[[network]] <- activate.vertex.attribute(dat$nw[[network]], 
-                                                     prefix = "testatus", value = status, onset = at, 
-                                                     terminus = Inf)
-    }
-  }
   return(dat)
 }
 
@@ -637,8 +596,8 @@ vb <- function (x, type, s = 1, at = 2) {
             sep = "")
         active <- x$attr$active
         cat("\nPopulation Size:", sum(active == 1))
-        cat("\nHCV Prevalence:", round(x$epi$hcv.i.num[at]/sum(active == 1), 2))
-        cat("\nHIV Prevalence:", round(x$epi$hiv.i.num[at]/sum(active == 1), 2))
+        cat("\nHCV Prevalence:", round(x$epi$hcv.i.num[at]/sum(active == 1), 3))
+        cat("\nHIV Prevalence:", round(x$epi$hiv.i.num[at]/sum(active == 1), 3))
         cat("\n----------------------------")
       }
     }

@@ -1,13 +1,4 @@
-
-# Load packages and data --------------------------------------------------
-library(readstata13)
 library(tidyverse)
-library(MASS)
-
-load("data/baseline_inj.Rdata")
-
-ego <- readRDS("data/ego_2014_2020.RData")
-
 
 # Parameters --------------------------------------------------------------
 pop <- n <-  10000 #Size of hypothetical population for simulation
@@ -132,9 +123,9 @@ params$cess_change_probs <- data.frame(early = c(0.607, 0.107, 0.143, 0.143),
 t0 <- list()
 
 t0$age <- rgamma(pop*2, shape = params$age_dist[1], rate = params$age_dist[2])
-t0$age <- t0$age[sample(which(t0$age > 22 & t0$age < 74), pop, replace = F)]
+t0$age <- t0$age[sample(which(t0$age > 22 & t0$age < 75), pop, replace = F)]
 t0$age_group <- cut(t0$age, 
-                    breaks = c(18, 24, 34, 44, 75), 
+                    breaks = c(18, 24, 34, 44, 100), 
                     labels = c(1:4), 
                     right = TRUE, include.lowest = TRUE)
 
@@ -153,8 +144,6 @@ t0$status_vec[which(t0$hcv_vec==1 | t0$hiv_vec==1)] <- "i" #a disease status vec
 t0$inj30d <- rexp(pop*2, rate = params$inj30d_dist) %>% round()
 t0$inj30d <- t0$inj30d[sample(which(t0$inj30d <= 200 & t0$inj30d >= 1), pop, replace=F)]
 
-t0$sex30d <- rpois(pop, 12)
-
 t0$cess_group <- sample(1:4, pop, replace=T, prob=params$cess_dist)
 t0$cess_begin <- runif(pop, min = params$cess_begin_dist[1], max = params$cess_begin_dist[2])
 
@@ -162,11 +151,10 @@ t0$hcv_spont_clear_prob <- rbeta(pop, params$hcv_spont_clear_dist[1], params$hcv
 t0$hcv_acute_length <- runif(pop, params$hcv_acute_length_dist[1], params$hcv_acute_length_dist[2])
 t0$hcv_ever_treated <- rbinom(pop, 1, params$hcv_ever_treated)
 
-#t0$moud <- sapply(cess_group, function(x) rbinom(1,size = 1, prob = params$moud_prob[x]))
-#t0$ssp <- sapply(cess_group, function(x) rbinom(1,size = 1, prob = params$ssp_prob[x]))
 
 
-## Set vectors for service availability
+# Vectors for pandemic-induced changes ------------------------------------
+
 test_rate <- test_rate_covid  <- rep(params$hiv_test, time_steps)
 test_rate_covid[37:(37+2)] <- params$hiv_test/2
 

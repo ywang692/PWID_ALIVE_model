@@ -42,7 +42,6 @@ setup <- function(dat,at) {
 test <- function(dat, at) {
   
   active <- get_attr(dat, "active")
-  #current_inj <- get_attr(dat, "current_inj")
   alive <- get_attr(dat,"exitTime") %>% sapply(function(x) ifelse(is.na(x), 1, 0))
   
   ## HIV testing
@@ -78,7 +77,6 @@ test <- function(dat, at) {
 treatment <- function(dat, at) {
   
   active <- get_attr(dat, "active")
-  #current_inj <- get_attr(dat, "current_inj")
   test.status <- get_attr(dat, "diag.status")
   hiv.status <- get_attr(dat,"hiv_status")
   hcv.status <- get_attr(dat,"hcv_status")
@@ -251,7 +249,7 @@ infect <- function(dat, at) {
       index <- idsInf[ii]
       
       ## find all of index's drug-use partners who are also active at current time step 
-      el <- unique(nw[which(nw$V1 == index), "V2"], nw[which(nw$V2 == index), "V1"]) 
+      el <- unique(c(nw[which(nw$V1 == index), "V2"], nw[which(nw$V2 == index), "V1"]))
       el <- intersect(el, which(active == 1))
 
       if (length(el)>0){

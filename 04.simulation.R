@@ -1,4 +1,3 @@
-setwd("for_repo")
 source("01.param.R")
 source("02.net.R")
 source("03.API_extension.R")
